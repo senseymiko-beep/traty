@@ -67,6 +67,7 @@
   .divider { height: 1px; background: #d1d1d6; margin: 26px 0 4px; }
   .lbl2 { font-size: 15px; color: var(--muted); flex: none; }
   .grow input[type=date] { text-align: right; }
+  .subname { color: var(--ink); }
   .sub-names { color: var(--muted); font-size: 12.5px; display: block; margin-top: 1px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -1015,7 +1016,8 @@
   }
   function drawEdSubs() {
     $("edSubs").innerHTML = edit.subs.map(x =>
-      '<div class="grow"><span style="flex:1">' + esc(x.name) + '</span><span class="gact red" data-subdel="' + x.id + '">Убрать</span></div>').join("");
+      '<div class="grow"><input class="subname" data-subren="' + x.id + '" value="' + esc(x.name) + '" maxlength="24" aria-label="Название подкатегории">' +
+      '<span class="gact red" data-subdel="' + x.id + '">Убрать</span></div>').join("");
   }
   function addEdSub() {
     const n = norm($("edSubNew").value);
@@ -1028,6 +1030,7 @@
     const name = norm($("edName").value);
     if (!name) { $("edName").focus(); return; }
     addEdSub();
+    edit.subs = edit.subs.map(x => ({ id: x.id, name: norm(x.name) })).filter(x => x.name);
     if (edit.id) {
       const c = cat(edit.id);
       c.name = name; c.icon = edit.icon; c.color = edit.color; c.subs = edit.subs;
@@ -1410,6 +1413,13 @@
   $("dbPayAdd").onclick = addPay;
   $("dbAmount").addEventListener("input", () => { if (dbEdit) drawDebtPays(); });
   $("edSubAdd").onclick = addEdSub;
+  $("edSubs").addEventListener("input", e => {
+    const inp = e.target.closest("[data-subren]");
+    if (!inp || !edit) return;
+    const x = edit.subs.find(v => v.id === inp.dataset.subren);
+    if (x) x.name = inp.value;
+  });
+  $("edSubs").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches("[data-subren]")) { e.preventDefault(); e.target.blur(); } });
   $("edSubNew").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addEdSub(); } });
   $("edDel").onclick = delCat;
 
