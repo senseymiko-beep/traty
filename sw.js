@@ -1,5 +1,5 @@
 // Версия кэша. Меняется при каждом обновлении файлов.
-const CACHE = "traty-v8";
+const CACHE = "traty-v9";
 const FILES = ["./", "./index.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 

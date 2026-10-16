@@ -158,7 +158,7 @@
   .grow input:focus, .grow textarea:focus { outline: none; }
   .grow.tap { cursor: pointer; }
   .glabel { font-size: 13px; color: var(--muted); margin: 0 4px 7px; text-transform: uppercase; letter-spacing: .03em; }
-  .gact { color: var(--blue); cursor: pointer; }
+  .gact { color: var(--blue); cursor: pointer; white-space: nowrap; }
   .gact.red { color: var(--red); }
   .hint { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin: -10px 4px 18px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: #c7c7cc; flex: none; }
@@ -436,6 +436,7 @@
       <div id="edSubs"></div>
       <div class="grow"><input id="edSubNew" placeholder="Новый, например кофе" maxlength="24"><span class="gact" id="edSubAdd">Добавить</span></div>
     </div>
+    <div id="edLost"></div>
     <div class="glabel">Значок</div>
     <div class="icon-grid" id="edIcons"></div>
     <div class="glabel" style="margin-top:16px">Цвет</div>
@@ -999,7 +1000,7 @@
     edit = { id: id === "new" ? null : id, icon: c.icon, color: c.color, type: c.type,
       subs: (c.subs || []).map(x => Object.assign({}, x)) };
     $("edSubNew").value = "";
-    drawEdSubs();
+    drawEdSubs(); drawEdLost();
     $("edTitle").textContent = id === "new" ? (edit.type === "in" ? "Новая категория дохода" : "Новая категория расхода") : "Категория";
     $("edName").value = c.name;
     $("edDel").hidden = !edit.id;
@@ -1017,7 +1018,54 @@
   function drawEdSubs() {
     $("edSubs").innerHTML = edit.subs.map(x =>
       '<div class="grow"><input class="subname" data-subren="' + x.id + '" value="' + esc(x.name) + '" maxlength="24" aria-label="Название подкатегории">' +
+      (savedSub(x.id) ? '<span class="gact" data-subout="' + x.id + '" style="margin-right:14px">Вынести</span>' : "") +
       '<span class="gact red" data-subdel="' + x.id + '">Убрать</span></div>').join("");
+  }
+  const savedSub = sid => { const c = edit && edit.id && cat(edit.id); return !!(c && c.subs.some(x => x.id === sid)); };
+  const subTx = (cid, sid) => live().filter(t => t.catId === cid && t.subId === sid);
+  // Записи, чья подкатегория была убрана: их можно вернуть
+  function drawEdLost() {
+    const c = edit.id && cat(edit.id);
+    const g = {};
+    if (c) live().forEach(t => {
+      if (t.catId !== c.id || !t.subId || c.subs.some(x => x.id === t.subId)) return;
+      g[t.subId] = g[t.subId] || { n: 0, sum: 0 };
+      g[t.subId].n++; g[t.subId].sum += Math.abs(t.amount);
+    });
+    const keys = Object.keys(g);
+    $("edLost").innerHTML = keys.length
+      ? '<div class="glabel">Из убранных подкатегорий</div><div class="group">' + keys.map(k =>
+          '<div class="grow" style="flex-wrap:wrap;row-gap:6px"><span style="flex:1 0 100%">Записей: ' + g[k].n + " на " + money(g[k].sum) + "</span>" +
+          '<span class="gact" data-lostsub="' + k + '" style="margin-right:14px">В подкатегорию</span>' +
+          '<span class="gact" data-lostcat="' + k + '">В категорию</span></div>').join("") +
+        '</div><p class="hint">Эти записи остались в категории, но без подкатегории. Верни их обратно и дай название.</p>'
+      : "";
+  }
+  function promoteSub(sid, name) {
+    const parent = cat(edit.id);
+    if (!parent || !name) return;
+    const used = new Set(state.cats.map(x => x.color));
+    const nc = { id: uidGen(), name, icon: "dots", color: COLORS.find(x => !used.has(x)) || "#8e8e93", type: parent.type, subs: [] };
+    const known = state.cats.find(x => x.type === parent.type && x.name.toLowerCase() === name.toLowerCase());
+    const target = known || nc;
+    if (!known) state.cats.push(nc);
+    const now = Date.now();
+    subTx(parent.id, sid).forEach(t => { t.catId = target.id; t.subId = null; t.touched = now; });
+    parent.subs = parent.subs.filter(x => x.id !== sid);
+    state.catsUpdated = now;
+    render(); save();
+    openEdit(parent.id);
+  }
+  function restoreSub(sid, name) {
+    const parent = cat(edit.id);
+    if (!parent || !name) return;
+    let sub = parent.subs.find(x => x.name.toLowerCase() === name.toLowerCase());
+    if (!sub) { sub = { id: sid, name }; parent.subs.push(sub); }
+    const now = Date.now();
+    subTx(parent.id, sid).forEach(t => { t.subId = sub.id; t.touched = now; });
+    state.catsUpdated = now;
+    render(); save();
+    openEdit(parent.id);
   }
   function addEdSub() {
     const n = norm($("edSubNew").value);
@@ -1356,7 +1404,27 @@
     const sb = e.target.closest("[data-sub]");
     if (sb && entry) { entry.subId = entry.subId === sb.dataset.sub ? null : sb.dataset.sub; drawSubs(); return; }
     const sd = e.target.closest("[data-subdel]");
-    if (sd && edit) { edit.subs = edit.subs.filter(x => x.id !== sd.dataset.subdel); drawEdSubs(); return; }
+    if (sd && edit) {
+      const x = edit.subs.find(v => v.id === sd.dataset.subdel);
+      const n = edit.id ? subTx(edit.id, sd.dataset.subdel).length : 0;
+      if (n && !confirm("Убрать подкатегорию \u00AB" + x.name + "\u00BB? Её записей: " + n +
+        ". Они останутся в этой категории без подкатегории. Чтобы сделать её отдельной категорией, нажми Вынести.")) return;
+      edit.subs = edit.subs.filter(v => v.id !== sd.dataset.subdel); drawEdSubs(); return;
+    }
+    const so = e.target.closest("[data-subout]");
+    if (so && edit) {
+      const x = edit.subs.find(v => v.id === so.dataset.subout);
+      if (confirm("Сделать \u00AB" + x.name + "\u00BB отдельной категорией? Записей переедет: " + subTx(edit.id, x.id).length + "."))
+        promoteSub(x.id, norm(x.name));
+      return;
+    }
+    const ls = e.target.closest("[data-lostsub], [data-lostcat]");
+    if (ls && edit) {
+      const name = norm(prompt(ls.dataset.lostcat ? "Название категории, например Продукты" : "Название подкатегории") || "");
+      if (!name) return;
+      if (ls.dataset.lostcat) promoteSub(ls.dataset.lostcat, name); else restoreSub(ls.dataset.lostsub, name);
+      return;
+    }
     const tile = e.target.closest("[data-cat]");
     if (tile && tile.closest(".grid")) { openEntry(tile.dataset.cat); return; }
     const add = e.target.closest("[data-add]");
