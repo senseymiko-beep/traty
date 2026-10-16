@@ -20,17 +20,55 @@
   input, textarea, select { font-size: 16px !important; }
   button, .tile, .key, .chip, .op, .grow { touch-action: manipulation; }
   .key, .tabbtn, .tile { user-select: none; -webkit-user-select: none; }
-  html, body { margin: 0; }
-  html { min-height: 100%; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: var(--bg); color: var(--ink);
-    min-height: 100%;
-    padding-bottom: calc(84px + env(safe-area-inset-bottom));
     -webkit-font-smoothing: antialiased;
   }
-  .screen { display: none; padding: 0 16px 24px; max-width: 640px; margin: 0 auto; }
-  .screen.on { display: block; }
+  /* Экраны листаются вбок, каждый прокручивается сам по себе */
+  .pager { position: fixed; left: 0; right: 0; top: 0; bottom: var(--tabh, 62px);
+    display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+    scrollbar-width: none; overscroll-behavior-x: contain; }
+  .pager::-webkit-scrollbar { display: none; }
+  .page { flex: 0 0 100%; width: 100%; height: 100%; overflow-y: auto; overflow-x: hidden;
+    scroll-snap-align: start; scroll-snap-stop: always; overscroll-behavior-y: contain; }
+  .screen { padding: 0 16px 24px; max-width: 640px; margin: 0 auto; }
+
+  /* Главная: две половины, переключаются свайпом вверх-вниз */
+  #pg-home { scroll-snap-type: y mandatory; }
+  .half { min-height: 100%; scroll-snap-align: start; display: flex; flex-direction: column; }
+  .half > .screen { flex: 1; width: 100%; display: flex; flex-direction: column; }
+  .half.in { background: #e6f6eb; }
+  .half.out { background: #fdeceb; }
+  .hero { text-align: center; margin: 6px 0 16px; }
+  .hero-lbl { font-size: 34px; font-weight: 800; letter-spacing: -.02em; }
+  .half.in .hero-lbl, .half.in .hero-sum { color: #1f9d48; }
+  .half.out .hero-lbl, .half.out .hero-sum { color: #e0261b; }
+  .hero-sum { font-size: 22px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .flip { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 18px auto 4px;
+    background: none; border: 0; font: inherit; font-size: 14px; font-weight: 600; color: var(--muted);
+    cursor: pointer; padding: 8px 14px; }
+  .flip svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .flip.down { margin-top: auto; padding-top: 22px; }
+  .flip.up { margin: 0 auto; padding-top: max(10px, env(safe-area-inset-top)); }
+  .half.out .topbar { padding-top: 0; }
+
+  /* Долги */
+  .debt { display: flex; align-items: center; gap: 12px; background: var(--card); padding: 11px 14px;
+    width: 100%; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  .debt + .debt { border-top: 1px solid var(--line); }
+  .debt-list { border-radius: 12px; overflow: hidden; }
+  .debt-right { text-align: right; flex: none; }
+  .debt-of { font-size: 12px; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .bar { height: 4px; background: #e5e5ea; border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 2px; }
+  .divider { height: 1px; background: #d1d1d6; margin: 26px 0 4px; }
+  .lbl2 { font-size: 15px; color: var(--muted); flex: none; }
+  .grow input[type=date] { text-align: right; }
+  .sub-names { color: var(--muted); font-size: 12.5px; display: block; margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .topbar { display: flex; align-items: center; justify-content: center; gap: 8px;
     padding: max(10px, env(safe-area-inset-top)) 0 12px; position: relative; }
@@ -81,6 +119,7 @@
     align-items: center; justify-content: center; }
   .op-ico svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .op-body { flex: 1; min-width: 0; }
+  .op-name, .op-sub { display: block; }
   .op-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .op-sub { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .op-sum { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -191,23 +230,55 @@
 </style>
 </head>
 <body>
-<!-- ПАНЕЛЬ -->
-<section class="screen on" id="scr-home">
-  <div class="topbar">
-    <button class="arrow" id="hPrev" aria-label="Назад">&lsaquo;</button>
-    <div class="period" id="hPeriod">—</div>
-    <button class="arrow" id="hNext" aria-label="Вперёд">&rsaquo;</button>
+<main class="pager" id="pager">
+<!-- ГЛАВНАЯ: доход сверху, расход снизу -->
+<section class="page" id="pg-home">
+  <div class="half in" id="halfIn">
+    <div class="screen">
+      <div class="topbar">
+        <button class="arrow" id="hPrev" aria-label="Назад">&lsaquo;</button>
+        <div class="period" id="hPeriod">—</div>
+        <button class="arrow" id="hNext" aria-label="Вперёд">&rsaquo;</button>
+      </div>
+      <div id="warnHome"></div>
+      <div class="hero"><div class="hero-lbl">Доход</div><div class="hero-sum" id="sumIn">0</div></div>
+      <div class="grid" id="gridIn"></div>
+      <button class="flip down" data-go="halfOut">Расход<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+    </div>
   </div>
-  <div id="warnHome"></div>
-  <div class="sec-head"><span class="sec-name">Доходы</span><span class="sec-sum in" id="sumIn">0</span></div>
-  <div class="grid" id="gridIn"></div>
-  <div class="sec-head"><span class="sec-name">Расходы</span><span class="sec-sum out" id="sumOut">0</span></div>
-  <div class="grid" id="gridOut"></div>
-  <div id="askHome"></div>
+  <div class="half out" id="halfOut">
+    <div class="screen">
+      <button class="flip up" data-go="halfIn"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg>Доход</button>
+      <div class="topbar">
+        <button class="arrow" id="h2Prev" aria-label="Назад">&lsaquo;</button>
+        <div class="period" id="h2Period">—</div>
+        <button class="arrow" id="h2Next" aria-label="Вперёд">&rsaquo;</button>
+      </div>
+      <div class="hero"><div class="hero-lbl">Расход</div><div class="hero-sum" id="sumOut">0</div></div>
+      <div class="grid" id="gridOut"></div>
+      <div id="askHome"></div>
+    </div>
+  </div>
 </section>
 
+<!-- ДОЛГИ -->
+<section class="page" id="pg-debt"><div class="screen" id="scr-debt">
+  <div class="topbar"><div class="scr-title" style="margin:0">Долги</div></div>
+  <div class="cards2">
+    <div class="mini"><div class="mini-lbl">Я должен</div><div class="mini-val" style="color:var(--red)" id="dOwe">0</div></div>
+    <div class="mini"><div class="mini-lbl">Мне должны</div><div class="mini-val" style="color:var(--green)" id="dLent">0</div></div>
+  </div>
+  <div class="sec-head"><span class="sec-name">Кому я должен</span><span class="gact" data-newdebt="owe">Добавить</span></div>
+  <div id="listOwe"></div>
+  <div class="divider"></div>
+  <div class="sec-head"><span class="sec-name">Кто мне должен</span><span class="gact" data-newdebt="lent">Добавить</span></div>
+  <div id="listLent"></div>
+  <div id="debtClosed"></div>
+  <p class="note">Долги и кредиты ведутся отдельно и не влияют на доход, расход и отчёты.</p>
+</div></section>
+
 <!-- ИСТОРИЯ -->
-<section class="screen" id="scr-hist">
+<section class="page" id="pg-hist"><div class="screen" id="scr-hist">
   <div class="topbar">
     <button class="arrow" id="iPrev" aria-label="Назад">&lsaquo;</button>
     <div class="period" id="iPeriod">—</div>
@@ -230,11 +301,11 @@
     <span>Подтянет пропущенное и подставит получателей в твои записи</span>
   </label>
   <div id="status" class="status" hidden></div>
-</section>
+</div></section>
 
-<!-- ОТЧЁТ -->
-<section class="screen" id="scr-rep">
-  <div class="scr-title">Отчёт</div>
+<!-- ОТЧЁТЫ -->
+<section class="page" id="pg-rep"><div class="screen" id="scr-rep">
+  <div class="topbar"><div class="scr-title" style="margin:0">Отчёты и графики</div></div>
   <div class="segbar">
     <button id="repOut" aria-selected="true">Расходы</button>
     <button id="repIn" aria-selected="false">Доходы</button>
@@ -255,14 +326,17 @@
   <p class="note" id="avgLine"></p>
   <div class="list-title">Против прошлого месяца</div>
   <div class="rank" id="cmp"></div>
-</section>
+</div></section>
 
 <!-- НАСТРОЙКИ -->
-<section class="screen" id="scr-set">
-  <div class="scr-title">Настройки</div>
+<section class="page" id="pg-set"><div class="screen" id="scr-set">
+  <div class="topbar"><div class="scr-title" style="margin:0">Настройки</div></div>
 
-  <div class="glabel">Разделы</div>
-  <div class="group" id="catRows"></div>
+  <div class="glabel">Категории доходов</div>
+  <div class="group" id="catRowsIn"></div>
+  <div class="glabel">Категории расходов</div>
+  <div class="group" id="catRowsOut"></div>
+  <p class="hint">Нажми на категорию, чтобы добавить в неё подкатегории, например Еда: кофе, обеды, доставка.</p>
 
   <div class="glabel">Синхронизация</div>
   <div class="group">
@@ -287,7 +361,41 @@
   </div>
   <input type="file" id="restoreFile" accept="application/json" hidden>
   <p class="hint" id="backupInfo"></p>
-</section>
+</div></section>
+</main>
+
+<!-- ДОЛГ -->
+<div class="sheet" id="debt" hidden>
+  <div class="sheet-in">
+    <div class="grip"></div>
+    <div class="sheet-head">
+      <span class="sheet-title" id="dbTitle">Новый долг</span>
+      <button class="sheet-x" id="dbX">Закрыть</button>
+    </div>
+    <div class="segbar" id="dbKind">
+      <button data-kind="person" aria-selected="true">Человеку</button>
+      <button data-kind="credit" aria-selected="false">Кредит</button>
+    </div>
+    <div class="group" style="margin-top:10px">
+      <div class="grow"><input id="dbName" placeholder="Кому" maxlength="40"></div>
+      <div class="grow"><input id="dbAmount" inputmode="decimal" placeholder="Сумма, &#8376;" autocomplete="off"></div>
+      <div class="grow"><span class="lbl2">Дата</span><input id="dbDate" type="date"></div>
+      <div class="grow"><span class="lbl2">Вернуть до</span><input id="dbDue" type="date"></div>
+      <div class="grow"><input id="dbNote" placeholder="Примечание" maxlength="80"></div>
+    </div>
+    <div id="dbPaysWrap" hidden>
+      <div class="glabel" id="dbPaysLbl">Платежи</div>
+      <div class="group">
+        <div id="dbPays"></div>
+        <div class="grow"><input id="dbPayAmt" inputmode="decimal" placeholder="Сумма" autocomplete="off"><input id="dbPayDate" type="date" style="flex:none;width:auto"><span class="gact" id="dbPayAdd">Внести</span></div>
+      </div>
+      <p class="hint" id="dbLeft"></p>
+    </div>
+    <button class="btn" id="dbSave">Сохранить</button>
+    <button class="btn grey" id="dbAll" hidden style="margin-top:10px">Погашен полностью</button>
+    <button class="btn grey" id="dbDel" hidden style="margin-top:10px;color:var(--red)">Удалить</button>
+  </div>
+</div>
 
 <!-- ВВОД СУММЫ -->
 <div class="sheet" id="sheet" hidden>
@@ -295,7 +403,7 @@
     <div class="grip"></div>
     <div class="sheet-head">
       <span class="bubble" id="shIco" style="width:38px;height:38px"></span>
-      <span class="sheet-title" id="shTitle">Раздел</span>
+      <span class="sheet-title" id="shTitle">Категория</span>
       <button class="sheet-x" id="shClose">Закрыть</button>
     </div>
     <div class="amount" id="shAmount">0</div>
@@ -320,11 +428,11 @@
   <div class="sheet-in">
     <div class="grip"></div>
     <div class="sheet-head">
-      <span class="sheet-title" id="edTitle">Новый раздел</span>
+      <span class="sheet-title" id="edTitle">Новая категория</span>
       <button class="sheet-x" id="edClose">Закрыть</button>
     </div>
     <div class="group"><div class="grow"><input id="edName" placeholder="Название" maxlength="24"></div></div>
-    <div class="glabel">Подразделы</div>
+    <div class="glabel">Подкатегории</div>
     <div class="group">
       <div id="edSubs"></div>
       <div class="grow"><input id="edSubNew" placeholder="Новый, например кофе" maxlength="24"><span class="gact" id="edSubAdd">Добавить</span></div>
@@ -334,7 +442,7 @@
     <div class="glabel" style="margin-top:16px">Цвет</div>
     <div class="color-grid" id="edColors"></div>
     <div style="margin-top:18px"><button class="btn" id="edSave">Сохранить</button></div>
-    <div style="margin-top:10px"><button class="btn grey" id="edDel">Удалить раздел</button></div>
+    <div style="margin-top:10px"><button class="btn grey" id="edDel">Удалить категорию</button></div>
   </div>
 </div>
 
@@ -350,10 +458,11 @@
   </div>
 </div>
 
-<nav class="tabbar">
-  <button class="tabbtn on" data-tab="home"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></svg>Панель</button>
+<nav class="tabbar" id="tabbar">
+  <button class="tabbtn on" data-tab="home"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/></svg>Главная</button>
+  <button class="tabbtn" data-tab="debt"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3.2 3.2 0 0 1 0 6.3M18 14.3c1.8.8 3 2.6 3 4.7"/></svg>Долги</button>
   <button class="tabbtn" data-tab="hist"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></svg>История</button>
-  <button class="tabbtn" data-tab="rep"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9h-9V3z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15V3.5z"/></svg>Отчёт</button>
+  <button class="tabbtn" data-tab="rep"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9h-9V3z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15V3.5z"/></svg>Отчёты</button>
   <button class="tabbtn" data-tab="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Настройки</button>
 </nav>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -382,6 +491,7 @@
     scis:  '<circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M7.5 16 18 4M16.5 16 6 4"/>',
     paw:   '<circle cx="7" cy="9" r="2"/><circle cx="12" cy="6.5" r="2"/><circle cx="17" cy="9" r="2"/><path d="M12 11.5c-3 0-5 2.2-5 4.5s2.2 3.5 5 3.5 5-1.2 5-3.5-2-4.5-5-4.5z"/>',
     tool:  '<path d="M15.5 3.5a5 5 0 0 0-5 6.6L3 17.6 6.4 21l7.5-7.5a5 5 0 0 0 6.6-6.6l-3.2 3.2-2.4-.6-.6-2.4 3.2-3.2z"/>',
+    user:  '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>',
     dots:  '<circle cx="6" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18" cy="12" r="1.7"/>',
     plus:  '<path d="M12 5v14M5 12h14"/>'
   };
@@ -423,9 +533,10 @@
     [["BEELINE","БИЛАЙН","TELE2","ТЕЛЕ2","KCELL","ACTIV","ALTEL","ТРАНСТЕЛЕКОМ","КАЗАХТЕЛЕКОМ","TELECOM","ИНТЕРНЕТ","GOOGLE","APPLE.COM","ICLOUD"],"Связь"]
   ];
 
-  let state = { cats: [], merchants: {}, tx: [], lastBackup: null, key: "", updatedAt: 0, catsUpdated: 0 };
+  let state = { cats: [], merchants: {}, tx: [], debts: [], lastBackup: null, key: "", updatedAt: 0, catsUpdated: 0 };
   let tab = "home", month = null, repMode = "out", repFilter = null;
-  let entry = null, edit = null, pendingAsk = [];
+  let entry = null, edit = null, pendingAsk = [], dbEdit = null, showClosed = false;
+  const TABS = ["home", "debt", "hist", "rep", "set"];
 
   const $ = id => document.getElementById(id);
   const money = v => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Math.round(v)) + " \u20B8";
@@ -436,7 +547,7 @@
   const svg = (k, cls) => '<svg viewBox="0 0 24 24" class="' + (cls || "") + '">' + (ICONS[k] || ICONS.dots) + "</svg>";
   const live = () => state.tx.filter(t => !t.deleted && t.kind !== "tr");
   const cat = id => state.cats.find(c => c.id === id);
-  const catName = id => (cat(id) || {}).name || "Без раздела";
+  const catName = id => (cat(id) || {}).name || "Без категории";
   const catColor = id => (cat(id) || {}).color || "#8e8e93";
   const catIcon = id => (cat(id) || {}).icon || "dots";
   const subName = (cid, sid) => {
@@ -477,6 +588,8 @@
     try { const raw = localStorage.getItem(KEY); if (raw) state = JSON.parse(raw); } catch (e) {}
     state.merchants = state.merchants || {};
     state.tx = state.tx || [];
+    state.debts = state.debts || [];
+    state.debts.forEach(d => { if (!d.pays) d.pays = []; if (!d.touched) d.touched = 1; });
     state.key = state.key || "";
     state.updatedAt = state.updatedAt || 0;
     state.catsUpdated = state.catsUpdated || 0;
@@ -508,9 +621,9 @@
     return MONTHS[+m - 1] + " " + y;
   }
 
-  // ---------- ПАНЕЛЬ ----------
+  // ---------- ГЛАВНАЯ ----------
   function renderHome() {
-    $("hPeriod").textContent = periodText();
+    $("hPeriod").textContent = $("h2Period").textContent = periodText();
     const rows = monthTx();
     const sum = {};
     rows.forEach(t => { sum[t.catId] = (sum[t.catId] || 0) + Math.abs(t.amount); });
@@ -530,7 +643,7 @@
 
     const unknown = [...new Set(live().filter(t => !t.catId && t.name).map(t => t.name))];
     $("askHome").innerHTML = unknown.length
-      ? '<div class="warnbar">Не разложено мест: ' + unknown.length +
+      ? '<div class="warnbar" style="margin-top:14px">Не разложено мест из выписки: ' + unknown.length +
         '. <button id="askOpen">Разобрать</button></div>' : "";
     if (unknown.length) $("askOpen").onclick = () => openAsk();
 
@@ -567,7 +680,7 @@
             .filter(Boolean).join(" \u00B7 ")) + "</span></span>" +
           '<span class="op-sum ' + (t.amount > 0 ? "plus" : "minus") + '">' +
           (t.amount > 0 ? "+" : "\u2212") + money(Math.abs(t.amount)) + "</span></div>").join("") + "</div>";
-    }).join("") : '<p class="empty">За этот месяц записей нет. Нажми на раздел на Панели.</p>';
+    }).join("") : '<p class="empty">За этот месяц записей нет. Добавь запись на Главной.</p>';
   }
 
   // ---------- ОТЧЁТ ----------
@@ -610,9 +723,9 @@
     if (fc && fc.subs.length) {
       const bs = Object.entries(sumsBy(month, repMode, repFilter)).sort((a, b) => b[1] - a[1]);
       const st = bs.reduce((a, x) => a + x[1], 0);
-      $("subRank").innerHTML = '<div class="list-title">' + esc(fc.name) + ": подразделы</div>" +
+      $("subRank").innerHTML = '<div class="list-title">' + esc(fc.name) + ": подкатегории</div>" +
         '<div class="rank">' + (bs.length ? bs.map(([k, v]) =>
-          '<div class="rank-row" style="cursor:default"><span class="rank-name">' + esc(k === "none" ? "Без подраздела" : subName(fc.id, k)) + "</span>" +
+          '<div class="rank-row" style="cursor:default"><span class="rank-name">' + esc(k === "none" ? "Без подкатегории" : subName(fc.id, k)) + "</span>" +
           '<span class="rank-pc">' + Math.round(v / (st || 1) * 100) + "%</span>" +
           '<span class="rank-sum">' + money(v) + "</span></div>").join("") : '<p class="empty">Нет записей.</p>') + "</div>";
     } else $("subRank").innerHTML = "";
@@ -671,12 +784,15 @@
 
   // ---------- НАСТРОЙКИ ----------
   function renderSet() {
-    $("catRows").innerHTML = state.cats.map(c =>
-      '<button class="grow tap" data-edit="' + c.id + '">' +
-      '<span class="op-ico" style="background:' + c.color + '">' + svg(c.icon) + "</span>" +
-      '<span style="flex:1">' + esc(c.name) + "</span>" +
-      '<span style="color:var(--muted);font-size:13px">' + (c.type === "in" ? "доход" : "расход") + "</span></button>"
-    ).join("") + '<button class="grow tap" data-edit="new"><span class="gact">Добавить раздел</span></button>';
+    ["in", "out"].forEach(type => {
+      $(type === "in" ? "catRowsIn" : "catRowsOut").innerHTML = state.cats.filter(c => c.type === type).map(c =>
+        '<button class="grow tap" data-edit="' + c.id + '">' +
+        '<span class="op-ico" style="background:' + c.color + '">' + svg(c.icon) + "</span>" +
+        '<span style="flex:1;min-width:0">' + esc(c.name) +
+        '<span class="sub-names">' + (c.subs.length ? esc(c.subs.map(x => x.name).join(", ")) : "без подкатегорий") + "</span></span>" +
+        '<span style="color:#c7c7cc;font-size:20px">&rsaquo;</span></button>'
+      ).join("") + '<button class="grow tap" data-edit="new" data-type="' + type + '"><span class="gact">Добавить категорию</span></button>';
+    });
     $("backupInfo").textContent = state.lastBackup
       ? "Последняя копия: " + new Date(state.lastBackup).toLocaleDateString("ru-RU") + ". Записей: " + live().length
       : "Копия ещё не делалась. Записей: " + live().length;
@@ -684,21 +800,138 @@
 
   function render() {
     if (!month) month = allMonths().pop() || today().slice(0, 7);
-    ["home", "hist", "rep", "set"].forEach(t => $("scr-" + t).classList.toggle("on", t === tab));
     document.querySelectorAll(".tabbtn").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
     const all = allMonths();
     const cur = today().slice(0, 7);
     const lo = all[0] || month;
     const last = all[all.length - 1] || month;
     const hi = last > cur ? last : cur;
-    ["h", "i", "r"].forEach(p => {
+    ["h", "h2", "i", "r"].forEach(p => {
       $(p + "Prev").disabled = month <= lo;
       $(p + "Next").disabled = month >= hi;
     });
-    if (tab === "home") renderHome();
-    if (tab === "hist") renderHist();
-    if (tab === "rep") renderRep();
-    if (tab === "set") renderSet();
+    renderHome(); renderDebt(); renderHist(); renderRep(); renderSet();
+  }
+
+  // ---------- ДОЛГИ ----------
+  const num = s => parseFloat(String(s || "").replace(/[\s  ]/g, "").replace(",", ".")) || 0;
+  const paid = d => (d.pays || []).reduce((a, p) => a + p.amount, 0);
+  const left = d => Math.max(0, d.amount - paid(d));
+  const liveDebts = () => state.debts.filter(d => !d.deleted);
+  const shortDate = v => { const d = new Date(v + "T00:00:00"); return d.getDate() + " " + MG[d.getMonth()]; };
+
+  function debtRow(d) {
+    const credit = d.kind === "credit", rest = left(d), part = d.pays.length && rest > 0;
+    const color = d.dir === "lent" ? "#34c759" : credit ? "#5856d6" : "#ff3b30";
+    const late = rest > 0 && d.due && d.due < today();
+    const sub = [credit ? "кредит" : "", d.due ? (late ? "просрочен с " : "до ") + shortDate(d.due) : "", d.note]
+      .filter(Boolean).join(" · ");
+    return '<button class="debt" data-debt="' + esc(d.id) + '">' +
+      '<span class="op-ico" style="background:' + color + '">' + svg(credit ? "bank" : "user") + "</span>" +
+      '<span class="op-body"><span class="op-name">' + esc(d.name) + "</span>" +
+      '<span class="op-sub"' + (late ? ' style="color:var(--red)"' : "") + ">" + esc(sub || ("с " + shortDate(d.date))) + "</span>" +
+      (part ? '<div class="bar"><i style="width:' + Math.round(paid(d) / d.amount * 100) + "%;background:" + color + '"></i></div>' : "") +
+      "</span>" +
+      '<span class="debt-right"><span class="op-sum">' + money(rest || d.amount) + "</span>" +
+      (part ? '<div class="debt-of">из ' + money(d.amount) + "</div>" : rest ? "" : '<div class="debt-of">закрыт</div>') +
+      "</span></button>";
+  }
+  function renderDebt() {
+    const open = liveDebts().filter(d => left(d) > 0.004)
+      .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || b.date.localeCompare(a.date));
+    const closed = liveDebts().filter(d => left(d) <= 0.004).sort((a, b) => b.date.localeCompare(a.date));
+    ["owe", "lent"].forEach(dir => {
+      const list = open.filter(d => d.dir === dir);
+      $(dir === "owe" ? "dOwe" : "dLent").textContent = money(list.reduce((a, d) => a + left(d), 0));
+      $(dir === "owe" ? "listOwe" : "listLent").innerHTML = list.length
+        ? '<div class="debt-list">' + list.map(debtRow).join("") + "</div>"
+        : '<p class="empty" style="padding:14px 10px">' + (dir === "owe" ? "Долгов и кредитов нет" : "Никто не должен") + "</p>";
+    });
+    $("debtClosed").innerHTML = closed.length
+      ? '<div class="sec-head"><span class="gact" id="closedToggle">' + (showClosed ? "Скрыть закрытые" : "Закрытые: " + closed.length) + "</span></div>" +
+        (showClosed ? '<div class="debt-list">' + closed.map(debtRow).join("") + "</div>" : "")
+      : "";
+    if ($("closedToggle")) $("closedToggle").onclick = () => { showClosed = !showClosed; renderDebt(); };
+  }
+
+  function openDebt(id, dir) {
+    const d = id ? state.debts.find(x => x.id === id) : null;
+    if (id && !d) return;
+    dbEdit = d ? { id: d.id, dir: d.dir, kind: d.kind, pays: d.pays.map(p => Object.assign({}, p)) }
+               : { id: null, dir, kind: "person", pays: [] };
+    $("dbTitle").textContent = d ? d.name : (dir === "owe" ? "Я должен" : "Мне должны");
+    $("dbKind").hidden = dbEdit.dir !== "owe";
+    $("dbName").value = d ? d.name : "";
+    $("dbAmount").value = d ? String(d.amount).replace(".", ",") : "";
+    $("dbDate").value = d ? d.date : today();
+    $("dbDue").value = d ? (d.due || "") : "";
+    $("dbNote").value = d ? (d.note || "") : "";
+    $("dbPayAmt").value = ""; $("dbPayDate").value = today();
+    $("dbPaysWrap").hidden = !d;
+    $("dbPaysLbl").textContent = dbEdit.dir === "owe" ? "Я вернул" : "Мне вернули";
+    $("dbAll").hidden = $("dbDel").hidden = !d;
+    drawDebtKind(); drawDebtPays();
+    $("debt").hidden = false;
+  }
+  function drawDebtKind() {
+    $("dbKind").querySelectorAll("button").forEach(b => b.setAttribute("aria-selected", b.dataset.kind === dbEdit.kind));
+    $("dbName").placeholder = dbEdit.dir === "lent" ? "Кто должен" : dbEdit.kind === "credit" ? "Банк или название кредита" : "Кому";
+  }
+  function drawDebtPays() {
+    $("dbPays").innerHTML = dbEdit.pays.slice().sort((a, b) => b.date.localeCompare(a.date)).map(p =>
+      '<div class="grow"><span style="flex:1">' + shortDate(p.date) + '</span><span class="op-sum" style="margin-right:12px">' +
+      money(p.amount) + '</span><span class="gact red" data-paydel="' + p.id + '">Убрать</span></div>').join("");
+    const total = num($("dbAmount").value), done = dbEdit.pays.reduce((a, p) => a + p.amount, 0);
+    $("dbLeft").textContent = total ? (done >= total ? "Долг закрыт." : "Осталось " + money(total - done) + " из " + money(total) + ".") : "";
+    $("dbAll").textContent = done >= total && total ? "Долг уже закрыт" : "Погашен полностью";
+    $("dbAll").disabled = done >= total;
+  }
+  function addPay() {
+    const v = num($("dbPayAmt").value);
+    if (!v || v <= 0) { $("dbPayAmt").focus(); return; }
+    dbEdit.pays.push({ id: uidGen(), date: $("dbPayDate").value || today(), amount: v });
+    $("dbPayAmt").value = "";
+    drawDebtPays();
+  }
+  function saveDebt() {
+    const name = norm($("dbName").value), amount = num($("dbAmount").value);
+    if (!name) { $("dbName").focus(); return; }
+    if (!amount || amount <= 0) { $("dbAmount").focus(); return; }
+    if (norm($("dbPayAmt").value)) addPay();
+    const data = { dir: dbEdit.dir, kind: dbEdit.dir === "owe" ? dbEdit.kind : "person", name, amount,
+      date: $("dbDate").value || today(), due: $("dbDue").value || "", note: norm($("dbNote").value),
+      pays: dbEdit.pays, touched: Date.now() };
+    if (dbEdit.id) Object.assign(state.debts.find(x => x.id === dbEdit.id), data);
+    else state.debts.push(Object.assign({ id: "d" + uidGen() }, data));
+    $("debt").hidden = true; dbEdit = null;
+    render(); save();
+  }
+  function payAll() {
+    const total = num($("dbAmount").value), done = dbEdit.pays.reduce((a, p) => a + p.amount, 0);
+    if (total > done) dbEdit.pays.push({ id: uidGen(), date: today(), amount: Math.round((total - done) * 100) / 100 });
+    saveDebt();
+  }
+  function delDebt() {
+    if (!confirm("Удалить этот долг вместе с платежами?")) return;
+    const d = state.debts.find(x => x.id === dbEdit.id);
+    if (d) { d.deleted = true; d.touched = Date.now(); }
+    $("debt").hidden = true; dbEdit = null;
+    render(); save();
+  }
+
+  // ---------- ЛИСТАНИЕ ЭКРАНОВ ----------
+  function goTab(t, smooth) {
+    const i = TABS.indexOf(t), pg = $("pager");
+    pg.scrollTo({ left: i * pg.clientWidth, behavior: smooth === false ? "auto" : "smooth" });
+    setTab(t);
+  }
+  function setTab(t) {
+    if (t === tab) return;
+    tab = t;
+    document.querySelectorAll(".tabbtn").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  }
+  function fitTabbar() {
+    document.documentElement.style.setProperty("--tabh", $("tabbar").offsetHeight + "px");
   }
 
   // ---------- ВВОД СУММЫ ----------
@@ -767,7 +1000,7 @@
       subs: (c.subs || []).map(x => Object.assign({}, x)) };
     $("edSubNew").value = "";
     drawEdSubs();
-    $("edTitle").textContent = id === "new" ? (edit.type === "in" ? "Новый доход" : "Новый расход") : "Раздел";
+    $("edTitle").textContent = id === "new" ? (edit.type === "in" ? "Новая категория дохода" : "Новая категория расхода") : "Категория";
     $("edName").value = c.name;
     $("edDel").hidden = !edit.id;
     $("edIcons").innerHTML = ICON_KEYS.map(k =>
@@ -805,8 +1038,8 @@
   function delCat() {
     const c = cat(edit.id);
     const used = live().filter(t => t.catId === edit.id).length;
-    if (!confirm("Удалить раздел \u00AB" + c.name + "\u00BB?" +
-      (used ? " Его записей: " + used + ", они останутся без раздела." : ""))) return;
+    if (!confirm("Удалить категорию \u00AB" + c.name + "\u00BB?" +
+      (used ? " Её записей: " + used + ", они останутся без категории." : ""))) return;
     state.cats = state.cats.filter(x => x.id !== edit.id);
     state.tx.forEach(t => { if (t.catId === edit.id) { t.catId = null; t.touched = Date.now(); } });
     for (const m in state.merchants) if (state.merchants[m] === edit.id) delete state.merchants[m];
@@ -974,7 +1207,7 @@
     try {
       lastPushed = state.updatedAt;
       await fb.setDoc(fb.doc(fb.db, "users", uid), {
-        cats: state.cats, merchants: state.merchants, tx: state.tx,
+        cats: state.cats, merchants: state.merchants, tx: state.tx, debts: state.debts,
         updatedAt: state.updatedAt, catsUpdated: state.catsUpdated || 0
       });
       syncUI("on", "Сохранено в " + new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }));
@@ -988,6 +1221,13 @@
       if (!cur || (t.touched || 0) >= (cur.touched || 0)) map[t.id] = t;
     });
     state.tx = Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
+    const dm = {};
+    [...(rem.debts || []), ...(state.debts || [])].forEach(d => {
+      const cur = dm[d.id];
+      if (!cur || (d.touched || 0) >= (cur.touched || 0)) dm[d.id] = d;
+    });
+    state.debts = Object.values(dm);
+    state.debts.forEach(d => { if (!d.pays) d.pays = []; });
     state.merchants = (rem.updatedAt || 0) > (state.updatedAt || 0)
       ? Object.assign({}, state.merchants, rem.merchants || {})
       : Object.assign({}, rem.merchants || {}, state.merchants);
@@ -1060,14 +1300,34 @@
   }
 
   // ---------- СОБЫТИЯ ----------
-  document.querySelectorAll(".tabbtn").forEach(b => b.onclick = () => { tab = b.dataset.tab; repFilter = null; render(); });
+  document.querySelectorAll(".tabbtn").forEach(b => b.onclick = () => goTab(b.dataset.tab));
+  let scrollT = null;
+  $("pager").addEventListener("scroll", () => {
+    clearTimeout(scrollT);
+    scrollT = setTimeout(() => {
+      const pg = $("pager"), i = Math.round(pg.scrollLeft / pg.clientWidth);
+      if (TABS[i]) setTab(TABS[i]);
+    }, 60);
+  }, { passive: true });
+  window.addEventListener("resize", () => { fitTabbar(); goTab(tab, false); });
   $("hPrev").onclick = () => setMonth(-1); $("hNext").onclick = () => setMonth(1);
+  $("h2Prev").onclick = () => setMonth(-1); $("h2Next").onclick = () => setMonth(1);
   $("iPrev").onclick = () => setMonth(-1); $("iNext").onclick = () => setMonth(1);
   $("rPrev").onclick = () => setMonth(-1); $("rNext").onclick = () => setMonth(1);
   $("repOut").onclick = () => { repMode = "out"; repFilter = null; render(); };
   $("repIn").onclick = () => { repMode = "in"; repFilter = null; render(); };
 
   document.addEventListener("click", e => {
+    const go = e.target.closest("[data-go]");
+    if (go) { $("pg-home").scrollTo({ top: $(go.dataset.go).offsetTop, behavior: "smooth" }); return; }
+    const nd = e.target.closest("[data-newdebt]");
+    if (nd) { openDebt(null, nd.dataset.newdebt); return; }
+    const db = e.target.closest("[data-debt]");
+    if (db) { openDebt(db.dataset.debt); return; }
+    const pd = e.target.closest("[data-paydel]");
+    if (pd && dbEdit) { dbEdit.pays = dbEdit.pays.filter(p => p.id !== pd.dataset.paydel); drawDebtPays(); return; }
+    const kb = e.target.closest("#dbKind button");
+    if (kb && dbEdit) { dbEdit.kind = kb.dataset.kind; drawDebtKind(); return; }
     const mo = e.target.closest("[data-month]");
     if (mo) { month = mo.dataset.month; repFilter = null; render(); return; }
     const sb = e.target.closest("[data-sub]");
@@ -1079,7 +1339,7 @@
     const add = e.target.closest("[data-add]");
     if (add) { openEdit("new", add.dataset.add); return; }
     const ed = e.target.closest("[data-edit]");
-    if (ed) { openEdit(ed.dataset.edit === "new" ? "new" : ed.dataset.edit, "out"); return; }
+    if (ed) { openEdit(ed.dataset.edit, ed.dataset.type || "out"); return; }
     const seg = e.target.closest(".seg, .rank-row");
     if (seg && seg.dataset.cat) {
       repFilter = repFilter === seg.dataset.cat ? null : seg.dataset.cat;
@@ -1120,11 +1380,18 @@
     render(); save();
   };
   $("edSave").onclick = saveCat;
+  $("debt").onclick = e => { if (e.target === $("debt")) { $("debt").hidden = true; dbEdit = null; } };
+  $("dbX").onclick = () => { $("debt").hidden = true; dbEdit = null; };
+  $("dbSave").onclick = saveDebt;
+  $("dbAll").onclick = payAll;
+  $("dbDel").onclick = delDebt;
+  $("dbPayAdd").onclick = addPay;
+  $("dbAmount").addEventListener("input", () => { if (dbEdit) drawDebtPays(); });
   $("edSubAdd").onclick = addEdSub;
   $("edSubNew").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addEdSub(); } });
   $("edDel").onclick = delCat;
 
-  ["shNote", "shDate", "edName", "edSubNew", "fbMail", "fbPass", "apiKey"].forEach(id => {
+  ["shNote", "shDate", "edName", "edSubNew", "fbMail", "fbPass", "apiKey", "dbName", "dbAmount", "dbNote", "dbPayAmt"].forEach(id => {
     const el = $(id);
     if (el) el.addEventListener("focus", () =>
       setTimeout(() => el.scrollIntoView({ block: "center", behavior: "smooth" }), 280));
@@ -1155,7 +1422,7 @@
   };
   $("apiKey").onchange = () => { state.key = $("apiKey").value.trim(); save(); };
   $("csv").onclick = () => {
-    const rows = [["Дата","День недели","Сумма","На что","Контрагент","Раздел","Подраздел","Источник"]].concat(
+    const rows = [["Дата","День недели","Сумма","На что","Контрагент","Категория","Подкатегория","Источник"]].concat(
       live().map(t => [t.date, DOW[new Date(t.date + "T00:00:00").getDay()],
         String(t.amount).replace(".", ","), t.note || "", t.name || "", catName(t.catId), subName(t.catId, t.subId),
         t.src === "manual" ? "запись" : "выписка"]));
@@ -1165,8 +1432,8 @@
     a.download = "traty-" + today() + ".csv"; a.click();
   };
   $("reset").onclick = () => {
-    if (!confirm("Удалить все записи и разделы? Сначала лучше сохранить копию.")) return;
-    state = { cats: [], merchants: {}, tx: [], lastBackup: null, key: state.key, updatedAt: 0, catsUpdated: 0 };
+    if (!confirm("Удалить все записи, долги и категории? Сначала лучше сохранить копию.")) return;
+    state = { cats: [], merchants: {}, tx: [], debts: [], lastBackup: null, key: state.key, updatedAt: 0, catsUpdated: 0 };
     month = null;
     load(); render(); save();
   };
@@ -1174,6 +1441,7 @@
   (async function boot() {
     load();
     $("apiKey").value = state.key || "";
+    fitTabbar();
     render();
     let cfg = BUILTIN_CFG;
     try { const raw = localStorage.getItem(CFG_KEY); if (raw) cfg = JSON.parse(raw); } catch (e) {}
