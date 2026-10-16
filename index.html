@@ -379,15 +379,13 @@
     <div class="group" style="margin-top:10px">
       <div class="grow"><input id="dbName" placeholder="Кому" maxlength="40"></div>
       <div class="grow"><input id="dbAmount" inputmode="decimal" placeholder="Сумма, &#8376;" autocomplete="off"></div>
-      <div class="grow"><span class="lbl2">Дата</span><input id="dbDate" type="date"></div>
-      <div class="grow"><span class="lbl2">Вернуть до</span><input id="dbDue" type="date"></div>
       <div class="grow"><input id="dbNote" placeholder="Примечание" maxlength="80"></div>
     </div>
     <div id="dbPaysWrap" hidden>
       <div class="glabel" id="dbPaysLbl">Платежи</div>
       <div class="group">
         <div id="dbPays"></div>
-        <div class="grow"><input id="dbPayAmt" inputmode="decimal" placeholder="Сумма" autocomplete="off"><input id="dbPayDate" type="date" style="flex:none;width:auto"><span class="gact" id="dbPayAdd">Внести</span></div>
+        <div class="grow"><input id="dbPayAmt" inputmode="decimal" placeholder="Сумма возврата" autocomplete="off"><span class="gact" id="dbPayAdd">Внести</span></div>
       </div>
       <p class="hint" id="dbLeft"></p>
     </div>
@@ -442,7 +440,12 @@
     <div class="glabel" style="margin-top:16px">Цвет</div>
     <div class="color-grid" id="edColors"></div>
     <div style="margin-top:18px"><button class="btn" id="edSave">Сохранить</button></div>
-    <div style="margin-top:10px"><button class="btn grey" id="edDel">Удалить категорию</button></div>
+    <div id="edMoveWrap" style="margin-top:22px">
+      <div class="glabel">Сделать подкатегорией</div>
+      <p class="hint" style="margin:-2px 4px 10px">Выбери, внутрь какой категории перенести эту. Все её записи переедут вместе с ней.</p>
+      <div class="chips" id="edMove"></div>
+    </div>
+    <div style="margin-top:18px"><button class="btn grey" id="edDel">Удалить категорию</button></div>
   </div>
 </div>
 
@@ -823,13 +826,11 @@
   function debtRow(d) {
     const credit = d.kind === "credit", rest = left(d), part = d.pays.length && rest > 0;
     const color = d.dir === "lent" ? "#34c759" : credit ? "#5856d6" : "#ff3b30";
-    const late = rest > 0 && d.due && d.due < today();
-    const sub = [credit ? "кредит" : "", d.due ? (late ? "просрочен с " : "до ") + shortDate(d.due) : "", d.note]
-      .filter(Boolean).join(" · ");
+    const sub = [credit ? "кредит" : "", d.note].filter(Boolean).join(" · ");
     return '<button class="debt" data-debt="' + esc(d.id) + '">' +
       '<span class="op-ico" style="background:' + color + '">' + svg(credit ? "bank" : "user") + "</span>" +
       '<span class="op-body"><span class="op-name">' + esc(d.name) + "</span>" +
-      '<span class="op-sub"' + (late ? ' style="color:var(--red)"' : "") + ">" + esc(sub || ("с " + shortDate(d.date))) + "</span>" +
+      (sub ? '<span class="op-sub">' + esc(sub) + "</span>" : "") +
       (part ? '<div class="bar"><i style="width:' + Math.round(paid(d) / d.amount * 100) + "%;background:" + color + '"></i></div>' : "") +
       "</span>" +
       '<span class="debt-right"><span class="op-sum">' + money(rest || d.amount) + "</span>" +
@@ -838,7 +839,7 @@
   }
   function renderDebt() {
     const open = liveDebts().filter(d => left(d) > 0.004)
-      .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || b.date.localeCompare(a.date));
+      .sort((a, b) => b.date.localeCompare(a.date));
     const closed = liveDebts().filter(d => left(d) <= 0.004).sort((a, b) => b.date.localeCompare(a.date));
     ["owe", "lent"].forEach(dir => {
       const list = open.filter(d => d.dir === dir);
@@ -857,16 +858,14 @@
   function openDebt(id, dir) {
     const d = id ? state.debts.find(x => x.id === id) : null;
     if (id && !d) return;
-    dbEdit = d ? { id: d.id, dir: d.dir, kind: d.kind, pays: d.pays.map(p => Object.assign({}, p)) }
+    dbEdit = d ? { id: d.id, dir: d.dir, kind: d.kind, date: d.date, pays: d.pays.map(p => Object.assign({}, p)) }
                : { id: null, dir, kind: "person", pays: [] };
     $("dbTitle").textContent = d ? d.name : (dir === "owe" ? "Я должен" : "Мне должны");
     $("dbKind").hidden = dbEdit.dir !== "owe";
     $("dbName").value = d ? d.name : "";
     $("dbAmount").value = d ? String(d.amount).replace(".", ",") : "";
-    $("dbDate").value = d ? d.date : today();
-    $("dbDue").value = d ? (d.due || "") : "";
     $("dbNote").value = d ? (d.note || "") : "";
-    $("dbPayAmt").value = ""; $("dbPayDate").value = today();
+    $("dbPayAmt").value = "";
     $("dbPaysWrap").hidden = !d;
     $("dbPaysLbl").textContent = dbEdit.dir === "owe" ? "Я вернул" : "Мне вернули";
     $("dbAll").hidden = $("dbDel").hidden = !d;
@@ -889,7 +888,7 @@
   function addPay() {
     const v = num($("dbPayAmt").value);
     if (!v || v <= 0) { $("dbPayAmt").focus(); return; }
-    dbEdit.pays.push({ id: uidGen(), date: $("dbPayDate").value || today(), amount: v });
+    dbEdit.pays.push({ id: uidGen(), date: today(), amount: v });
     $("dbPayAmt").value = "";
     drawDebtPays();
   }
@@ -899,7 +898,7 @@
     if (!amount || amount <= 0) { $("dbAmount").focus(); return; }
     if (norm($("dbPayAmt").value)) addPay();
     const data = { dir: dbEdit.dir, kind: dbEdit.dir === "owe" ? dbEdit.kind : "person", name, amount,
-      date: $("dbDate").value || today(), due: $("dbDue").value || "", note: norm($("dbNote").value),
+      date: dbEdit.date || today(), note: norm($("dbNote").value),
       pays: dbEdit.pays, touched: Date.now() };
     if (dbEdit.id) Object.assign(state.debts.find(x => x.id === dbEdit.id), data);
     else state.debts.push(Object.assign({ id: "d" + uidGen() }, data));
@@ -1003,6 +1002,10 @@
     $("edTitle").textContent = id === "new" ? (edit.type === "in" ? "Новая категория дохода" : "Новая категория расхода") : "Категория";
     $("edName").value = c.name;
     $("edDel").hidden = !edit.id;
+    const targets = edit.id ? state.cats.filter(x => x.id !== edit.id && x.type === edit.type) : [];
+    $("edMoveWrap").hidden = !targets.length;
+    $("edMove").innerHTML = targets.map(x =>
+      '<button class="chip" data-moveto="' + x.id + '"><i style="background:' + x.color + '"></i>' + esc(x.name) + "</button>").join("");
     $("edIcons").innerHTML = ICON_KEYS.map(k =>
       '<button class="icon-pick" data-ic="' + k + '" aria-pressed="' + (k === edit.icon) + '">' + svg(k) + "</button>").join("");
     $("edColors").innerHTML = COLORS.map(col =>
@@ -1044,6 +1047,23 @@
     state.tx.forEach(t => { if (t.catId === edit.id) { t.catId = null; t.touched = Date.now(); } });
     for (const m in state.merchants) if (state.merchants[m] === edit.id) delete state.merchants[m];
     state.catsUpdated = Date.now();
+    $("edit").hidden = true; edit = null;
+    render(); save();
+  }
+
+  function moveCat(toId) {
+    const from = cat(edit.id), to = cat(toId);
+    if (!from || !to) return;
+    const used = live().filter(t => t.catId === from.id).length;
+    if (!confirm("Перенести «" + from.name + "» в «" + to.name + "» как подкатегорию?" +
+      (used ? " Записей переедет: " + used + "." : ""))) return;
+    let sub = to.subs.find(x => x.name.toLowerCase() === from.name.toLowerCase());
+    if (!sub) { sub = { id: uidGen(), name: from.name }; to.subs.push(sub); }
+    const now = Date.now();
+    state.tx.forEach(t => { if (t.catId === from.id) { t.catId = to.id; t.subId = sub.id; t.touched = now; } });
+    for (const m in state.merchants) if (state.merchants[m] === from.id) state.merchants[m] = to.id;
+    state.cats = state.cats.filter(x => x.id !== from.id);
+    state.catsUpdated = now;
     $("edit").hidden = true; edit = null;
     render(); save();
   }
@@ -1355,6 +1375,8 @@
     }
     const chip = e.target.closest("[data-ask]");
     if (chip) { assign(pendingAsk[0][0], chip.dataset.ask); return; }
+    const mv = e.target.closest("[data-moveto]");
+    if (mv && edit) { moveCat(mv.dataset.moveto); return; }
     const ic = e.target.closest("[data-ic]");
     if (ic) { edit.icon = ic.dataset.ic; document.querySelectorAll("[data-ic]").forEach(b =>
       b.setAttribute("aria-pressed", b.dataset.ic === edit.icon)); return; }
